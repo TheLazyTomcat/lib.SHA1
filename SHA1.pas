@@ -180,8 +180,6 @@ begin
 Result := Hash;
 For i := 0 to 15 do State[i] := EndianSwap(BlockWords[i]);
 For i := 16 to 79 do State[i] := LeftRotate(State[i - 3] xor State[i - 8] xor State[i - 14] xor State[i - 16],1);
-//SHA0:
-//For i := 16 to 79 do State[i] := State[i - 3] xor State[i - 8] xor State[i - 14] xor State[i - 16];
 For i := 0 to 79 do
   begin
     case i of
