@@ -9,9 +9,9 @@
 
   SHA1 Hash Calculation
 
-  ©František Milt 2015-03-16
+  ©František Milt 2015-03-18
 
-  Version 1.0
+  Version 1.1
 
 ===============================================================================}
 unit SHA1;
@@ -25,6 +25,12 @@ uses
   Classes;
 
 type
+{$IFDEF FPC}
+  QuadWord = QWord;
+{$ELSE}
+  QuadWord = Int64;
+{$ENDIF}
+
 {$IFDEF x64}
   TSize = UInt64;
 {$ELSE}
@@ -57,7 +63,8 @@ Function StrToSHA1Def(const Str: String; Default: TSHA1Hash): TSHA1Hash;
 Function SameSHA1(A,B: TSHA1Hash): Boolean;
 
 procedure BufferSHA1(var Hash: TSHA1Hash; const Buffer; Size: TSize); overload;
-Function LastBufferSHA1(Hash: TSHA1Hash; const Buffer; Size: TSize; MessageSize: Int64 = -1): TSHA1Hash;
+Function LastBufferSHA1(Hash: TSHA1Hash; const Buffer; Size: TSize; MessageLength: QuadWord): TSHA1Hash; overload;
+Function LastBufferSHA1(Hash: TSHA1Hash; const Buffer; Size: TSize): TSHA1Hash; overload;
 
 Function BufferSHA1(const Buffer; Size: TSize): TSHA1Hash; overload;
 
@@ -101,7 +108,7 @@ type
 
   TSHA1Context_Internal = record
     MessageHash:    TSHA1Hash;
-    MessageSize:    Int64;
+    MessageLength:  QuadWord;
     TransferSize:   LongWord;
     TransferBuffer: TBlockBuffer;
   end;
@@ -128,7 +135,7 @@ end;
       
 //------------------------------------------------------------------------------
 
-Function EndianSwap(Value: Int64): Int64;{$IFNDEF PurePascal}assembler;{$ENDIF} overload;
+Function EndianSwap(Value: QuadWord): QuadWord;{$IFNDEF PurePascal}assembler;{$ENDIF} overload;
 {$IFDEF PurePascal}
 begin
 Int64Rec(Result).Hi := EndianSwap(Int64Rec(Value).Lo);
@@ -137,13 +144,13 @@ end;
 {$ELSE}
 asm
 {$IFDEF x64}
-  MOV   RAX, RCX
-  BSWAP RAX
+  MOV     RAX, RCX
+  BSWAP   RAX
 {$ELSE}
-  MOV EAX, dword ptr [Value + 4]
-  MOV EDX, dword ptr [Value]
-  BSWAP EAX
-  BSWAP EDX
+  MOV     EAX, dword ptr [Value + 4]
+  MOV     EDX, dword ptr [Value]
+  BSWAP   EAX
+  BSWAP   EDX
 {$ENDIF}
 end;
 {$ENDIF}
@@ -285,9 +292,9 @@ end;
 
 //------------------------------------------------------------------------------
 
-Function LastBufferSHA1(Hash: TSHA1Hash; const Buffer; Size: TSize; MessageSize: Int64 = -1): TSHA1Hash;
+Function LastBufferSHA1(Hash: TSHA1Hash; const Buffer; Size: TSize; MessageLength: QuadWord): TSHA1Hash;
 type
-  TInt64Array = Array[0..0] of Int64;
+  TQuadWords = Array[0..0] of QuadWord;
 var
   FullBlocks:     Integer;
   LastBlockSize:  Integer;
@@ -295,20 +302,26 @@ var
   HelpBlocksBuff: Pointer;
 begin
 Result := Hash;
-If MessageSize < 0 then MessageSize := Size;
 FullBlocks := Size div BlockSize;
 If FullBlocks > 0 then BufferSHA1(Result,Buffer,FullBlocks * BlockSize);
 LastBlockSize := Size - TSize(FullBlocks * BlockSize);
-HelpBlocks := Ceil((LastBlockSize + SizeOf(Int64) + 1) / BlockSize);
+HelpBlocks := Ceil((LastBlockSize + SizeOf(QuadWord) + 1) / BlockSize);
 HelpBlocksBuff := AllocMem(HelpBlocks * BlockSize);
 try
   Move(TByteArray(Buffer)[FullBlocks * BlockSize],HelpBlocksBuff^,LastBlockSize);
   TByteArray(HelpBlocksBuff^)[LastBlockSize] := $80;
-  TInt64Array(HelpBlocksBuff^)[HelpBlocks * (BlockSize div SizeOf(Int64)) - 1] := EndianSwap(MessageSize * 8);
+  TQuadWords(HelpBlocksBuff^)[HelpBlocks * (BlockSize div SizeOf(QuadWord)) - 1] := EndianSwap(MessageLength);
   BufferSHA1(Result,HelpBlocksBuff^,HelpBlocks * BlockSize);
 finally
   FreeMem(HelpBlocksBuff,HelpBlocks * BlockSize);
 end;
+end;
+
+//------------------------------------------------------------------------------
+
+Function LastBufferSHA1(Hash: TSHA1Hash; const Buffer; Size: TSize): TSHA1Hash;
+begin
+Result := LastBufferSHA1(Hash,Buffer,Size,Size shl 3);
 end;
 
 //==============================================================================
@@ -382,9 +395,9 @@ end;
 
 Function StreamSHA1(Stream: TStream; Count: Int64 = -1): TSHA1Hash;
 var
-  Buffer:       Pointer;
-  BytesRead:    Integer;
-  MessageSize:  Int64;
+  Buffer:         Pointer;
+  BytesRead:      Integer;
+  MessageLength:  QuadWord;
 begin
 If Assigned(Stream) then
   begin
@@ -395,14 +408,14 @@ If Assigned(Stream) then
         Stream.Position := 0;
         Count := Stream.Size;
       end;
-    MessageSize := Count;
+    MessageLength := Count shl 3;
     GetMem(Buffer,BufferSize);
     try
       Result := InitialSHA1;
       repeat
         BytesRead := Stream.Read(Buffer^,Min(BufferSize,Count));
         If BytesRead < BufferSize then
-          Result := LastBufferSHA1(Result,Buffer^,BytesRead,MessageSize)
+          Result := LastBufferSHA1(Result,Buffer^,BytesRead,MessageLength)
         else
           BufferSHA1(Result,Buffer^,BytesRead);
         Dec(Count,BytesRead);
@@ -436,7 +449,7 @@ Result := AllocMem(SizeOf(TSHA1Context_Internal));
 with PSHA1Context_Internal(Result)^ do
   begin
     MessageHash := InitialSHA1;
-    MessageSize := 0;
+    MessageLength := 0;
     TransferSize := 0;
   end;
 end;
@@ -454,7 +467,7 @@ with PSHA1Context_Internal(Context)^ do
       begin
         If Size >= (BlockSize - TransferSize) then
           begin
-            Inc(MessageSize,BlockSize - TransferSize);
+            Inc(MessageLength,(BlockSize - TransferSize) shl 3);
             Move(Buffer,TransferBuffer[TransferSize],BlockSize - TransferSize);
             BufferSHA1(MessageHash,TransferBuffer,BlockSize);
             RemainingSize := Size - (BlockSize - TransferSize);
@@ -463,14 +476,14 @@ with PSHA1Context_Internal(Context)^ do
           end
         else
           begin
-            Inc(MessageSize,Size);
+            Inc(MessageLength,Size shl 3);
             Move(Buffer,TransferBuffer[TransferSize],Size);
             Inc(TransferSize,Size);
           end;  
       end
     else
       begin
-        Inc(MessageSize,Size);
+        Inc(MessageLength,Size shl 3);
         FullChunks := Size div BlockSize;
         BufferSHA1(MessageHash,Buffer,FullChunks * BlockSize);
         If TSize(FullChunks * BlockSize) < Size then
@@ -495,7 +508,7 @@ end;
 Function SHA1_Final(var Context: TSHA1Context): TSHA1Hash;
 begin
 with PSHA1Context_Internal(Context)^ do
-  Result := LastBufferSHA1(MessageHash,TransferBuffer,TransferSize,MessageSize);
+  Result := LastBufferSHA1(MessageHash,TransferBuffer,TransferSize,MessageLength);
 FreeMem(Context,SizeOf(TSHA1Context_Internal));
 Context := nil;
 end;
