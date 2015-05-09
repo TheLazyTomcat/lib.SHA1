@@ -9,15 +9,19 @@
 
   SHA1 Hash Calculation
 
-  ©František Milt 2015-03-18
+  ©František Milt 2015-05-07
 
-  Version 1.1
+  Version 1.1.1
 
 ===============================================================================}
 unit SHA1;
 
 {$DEFINE LargeBuffer}
 {.$DEFINE UseStringStream}
+
+{$IFOPT Q+}
+  {$DEFINE OverflowCheck}
+{$ENDIF}
 
 interface
 
@@ -30,12 +34,15 @@ type
 {$ELSE}
   QuadWord = Int64;
 {$ENDIF}
+  PQuadWord = ^QuadWord;
 
 {$IFDEF x64}
-  TSize = UInt64;
+  PtrUInt = UInt64;
 {$ELSE}
-  TSize = LongWord;
+  PtrUInt = LongWord;
 {$ENDIF}
+
+  TSize = PtrUInt;
 
   TSHA1Hash = Record
     PartA:  LongWord;
@@ -105,6 +112,7 @@ const
 
 type
   TBlockBuffer = Array[0..BlockSize - 1] of Byte;
+  PBlockBuffer = ^TBlockBuffer;
 
   TSHA1Context_Internal = record
     MessageHash:    TSHA1Hash;
@@ -121,18 +129,18 @@ type
 Function EndianSwap(Value: LongWord): LongWord;{$IFNDEF PurePascal}assembler;{$ENDIF} overload;
 {$IFDEF PurePascal}
 begin
-Result := (Value and $000000FF shl 24) or (Value and $0000FF00 shl 8) or
-          (Value and $00FF0000 shr 8) or (Value and $FF000000 shr 24);
+Result := LongWord((Value and $000000FF shl 24) or (Value and $0000FF00 shl 8) or
+                   (Value and $00FF0000 shr 8) or (Value and $FF000000 shr 24));
 end;
 {$ELSE}
 asm
 {$IFDEF x64}
-  MOV   RAX, RCX
+    MOV   RAX,  RCX
 {$ENDIF}
-  BSWAP EAX
+    BSWAP EAX
 end;
 {$ENDIF}
-      
+
 //------------------------------------------------------------------------------
 
 Function EndianSwap(Value: QuadWord): QuadWord;{$IFNDEF PurePascal}assembler;{$ENDIF} overload;
@@ -144,32 +152,32 @@ end;
 {$ELSE}
 asm
 {$IFDEF x64}
-  MOV     RAX, RCX
-  BSWAP   RAX
+    MOV   RAX,  RCX
+    BSWAP RAX
 {$ELSE}
-  MOV     EAX, dword ptr [Value + 4]
-  MOV     EDX, dword ptr [Value]
-  BSWAP   EAX
-  BSWAP   EDX
+    MOV   EAX,  dword ptr [Value + 4]
+    MOV   EDX,  dword ptr [Value]
+    BSWAP EAX
+    BSWAP EDX
 {$ENDIF}
 end;
 {$ENDIF}
 
 //------------------------------------------------------------------------------
 
-Function LeftRotate(Number,Shift: LongWord): LongWord; register; {$IFNDEF PurePascal}assembler;{$ENDIF}
+Function LeftRotate(Value: LongWord; Shift: Byte): LongWord;{$IFNDEF PurePascal}assembler;{$ENDIF}
 {$IFDEF PurePascal}
 begin
-  Result := (Number shl Shift) or (Number shr (32 - Shift));
+Shift := Shift and $1F;
+Result := LongWord((Value shl Shift) or (Value shr (32 - Shift)));
 end;
 {$ELSE}
-{$IFDEF FPC}{$ASMMODE intel}{$ENDIF}
 asm
 {$IFDEF x64}
-  MOV   EAX,  ECX
+    MOV   EAX,  ECX
 {$ENDIF}
-  MOV   CL,   DL
-  ROL   EAX,  CL
+    MOV   CL,   DL
+    ROL   EAX,  CL
 end;
 {$ENDIF}
 
@@ -206,18 +214,22 @@ For i := 0 to 79 do
      {60..79:}  FuncResult := Hash.PartB xor Hash.PartC xor Hash.PartD;
                 RoundConstant := RoundConsts[3];
     end;
-    Temp := LeftRotate(Hash.PartA,5) + FuncResult + Hash.PartE + RoundConstant + State[i];
+    {$IFDEF OverflowCheck}{$Q-}{$ENDIF}
+    Temp := LongWord(LeftRotate(Hash.PartA,5) + FuncResult + Hash.PartE + RoundConstant + State[i]);
+    {$IFDEF OverflowCheck}{$Q+}{$ENDIF}
     Hash.PartE := Hash.PartD;
     Hash.PartD := Hash.PartC;
     Hash.PartC := LeftRotate(Hash.PartB,30);
     Hash.PartB := Hash.PartA;
     Hash.PartA := Temp;
   end;
-Inc(Result.PartA,Hash.PartA);
-Inc(Result.PartB,Hash.PartB);
-Inc(Result.PartC,Hash.PartC);
-Inc(Result.PartD,Hash.PartD);
-Inc(Result.PartE,Hash.PartE);
+{$IFDEF OverflowCheck}{$Q-}{$ENDIF}
+Result.PartA := LongWord(Result.PartA + Hash.PartA);
+Result.PartB := LongWord(Result.PartB + Hash.PartB);
+Result.PartC := LongWord(Result.PartC + Hash.PartC);
+Result.PartD := LongWord(Result.PartD + Hash.PartD);
+Result.PartE := LongWord(Result.PartE + Hash.PartE);
+{$IFDEF OverflowCheck}{$Q+}{$ENDIF}
 end;
 
 //==============================================================================
@@ -277,40 +289,52 @@ end;
 //==============================================================================
 
 procedure BufferSHA1(var Hash: TSHA1Hash; const Buffer; Size: TSize);
-type
-  TBlocksArray = Array[0..0] of TBlockBuffer;
 var
-  i:  Integer;
+  i:    TSize;
+  Buff: PBlockBuffer;
 begin
-If (Size mod BlockSize) = 0 then
+If Size > 0 then
   begin
-    For i := 0 to Pred(Size div BlockSize) do
-      Hash := BlockHash(Hash,TBlocksArray(Buffer)[i]);
-  end
-else raise Exception.CreateFmt('BufferSHA1: Buffer size is not divisible by %d.',[BlockSize]);
+    If (Size mod BlockSize) = 0 then
+      begin
+        Buff := @Buffer;
+        For i := 0 to Pred(Size div BlockSize) do
+          begin
+            Hash := BlockHash(Hash,Buff^);
+            Inc(Buff);
+          end;
+      end
+    else raise Exception.CreateFmt('BufferSHA1: Buffer size is not divisible by %d.',[BlockSize]);
+  end;
 end;
 
 //------------------------------------------------------------------------------
 
 Function LastBufferSHA1(Hash: TSHA1Hash; const Buffer; Size: TSize; MessageLength: QuadWord): TSHA1Hash;
-type
-  TQuadWords = Array[0..0] of QuadWord;
 var
-  FullBlocks:     Integer;
-  LastBlockSize:  Integer;
-  HelpBlocks:     Integer;
+  FullBlocks:     TSize;
+  LastBlockSize:  TSize;
+  HelpBlocks:     TSize;
   HelpBlocksBuff: Pointer;
 begin
 Result := Hash;
 FullBlocks := Size div BlockSize;
 If FullBlocks > 0 then BufferSHA1(Result,Buffer,FullBlocks * BlockSize);
-LastBlockSize := Size - TSize(FullBlocks * BlockSize);
+{$IFDEF x64}
+LastBlockSize := Size - (FullBlocks * BlockSize);
+{$ELSE}
+LastBlockSize := Size - (Int64(FullBlocks) * BlockSize);
+{$ENDIF}
 HelpBlocks := Ceil((LastBlockSize + SizeOf(QuadWord) + 1) / BlockSize);
 HelpBlocksBuff := AllocMem(HelpBlocks * BlockSize);
 try
-  Move(TByteArray(Buffer)[FullBlocks * BlockSize],HelpBlocksBuff^,LastBlockSize);
-  TByteArray(HelpBlocksBuff^)[LastBlockSize] := $80;
-  TQuadWords(HelpBlocksBuff^)[HelpBlocks * (BlockSize div SizeOf(QuadWord)) - 1] := EndianSwap(MessageLength);
+  Move({%H-}Pointer(PtrUInt(@Buffer) + (FullBlocks * BlockSize))^,HelpBlocksBuff^,LastBlockSize);
+  {%H-}PByte(PtrUInt(HelpBlocksBuff) + LastBlockSize)^ := $80;
+  {$IFDEF x64}
+  {%H-}PQuadWord(PtrUInt(HelpBlocksBuff) + (HelpBlocks * BlockSize) - SizeOf(QuadWord))^ := EndianSwap(MessageLength);
+  {$ELSE}
+  {%H-}PQuadWord(PtrUInt(HelpBlocksBuff) + (Int64(HelpBlocks) * BlockSize) - SizeOf(QuadWord))^ := EndianSwap(MessageLength);
+  {$ENDIF}
   BufferSHA1(Result,HelpBlocksBuff^,HelpBlocks * BlockSize);
 finally
   FreeMem(HelpBlocksBuff,HelpBlocks * BlockSize);
@@ -408,7 +432,7 @@ If Assigned(Stream) then
         Stream.Position := 0;
         Count := Stream.Size;
       end;
-    MessageLength := Count shl 3;
+    MessageLength := QuadWord(Count shl 3);
     GetMem(Buffer,BufferSize);
     try
       Result := InitialSHA1;
@@ -458,7 +482,7 @@ end;
 
 procedure SHA1_Update(Context: TSHA1Context; const Buffer; Size: TSize);
 var
-  FullChunks:     Integer;
+  FullBlocks:     TSize;
   RemainingSize:  TSize;
 begin
 with PSHA1Context_Internal(Context)^ do
@@ -472,7 +496,7 @@ with PSHA1Context_Internal(Context)^ do
             BufferSHA1(MessageHash,TransferBuffer,BlockSize);
             RemainingSize := Size - (BlockSize - TransferSize);
             TransferSize := 0;
-            SHA1_Update(Context,TByteArray(Buffer)[Size - RemainingSize],RemainingSize);
+            SHA1_Update(Context,{%H-}Pointer(PtrUInt(@Buffer) + (Size - RemainingSize))^,RemainingSize);
           end
         else
           begin
@@ -484,12 +508,16 @@ with PSHA1Context_Internal(Context)^ do
     else
       begin
         Inc(MessageLength,Size shl 3);
-        FullChunks := Size div BlockSize;
-        BufferSHA1(MessageHash,Buffer,FullChunks * BlockSize);
-        If TSize(FullChunks * BlockSize) < Size then
+        FullBlocks := Size div BlockSize;
+        BufferSHA1(MessageHash,Buffer,FullBlocks * BlockSize);
+        If (FullBlocks * BlockSize) < Size then
           begin
-            TransferSize := Size - TSize(FullChunks * BlockSize);
-            Move(TByteArray(Buffer)[Size - TransferSize],TransferBuffer,TransferSize);
+            {$IFDEF x64}
+            TransferSize := Size - (FullBlocks * BlockSize);
+            {$ELSE}
+            TransferSize := Size - (Int64(FullBlocks) * BlockSize);
+            {$ENDIF}
+            Move({%H-}Pointer(PtrUInt(@Buffer) + (Size - TransferSize))^,TransferBuffer,TransferSize);
           end;
       end;
   end;
