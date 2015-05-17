@@ -328,12 +328,12 @@ LastBlockSize := Size - (Int64(FullBlocks) * BlockSize);
 HelpBlocks := Ceil((LastBlockSize + SizeOf(QuadWord) + 1) / BlockSize);
 HelpBlocksBuff := AllocMem(HelpBlocks * BlockSize);
 try
-  Move({%H-}Pointer(PtrUInt(@Buffer) + (FullBlocks * BlockSize))^,HelpBlocksBuff^,LastBlockSize);
-  {%H-}PByte(PtrUInt(HelpBlocksBuff) + LastBlockSize)^ := $80;
+  Move({%H-}Pointer({%H-}PtrUInt(@Buffer) + (FullBlocks * BlockSize))^,HelpBlocksBuff^,LastBlockSize);
+  {%H-}PByte({%H-}PtrUInt(HelpBlocksBuff) + LastBlockSize)^ := $80;
   {$IFDEF x64}
-  {%H-}PQuadWord(PtrUInt(HelpBlocksBuff) + (HelpBlocks * BlockSize) - SizeOf(QuadWord))^ := EndianSwap(MessageLength);
+  {%H-}PQuadWord({%H-}PtrUInt(HelpBlocksBuff) + (HelpBlocks * BlockSize) - SizeOf(QuadWord))^ := EndianSwap(MessageLength);
   {$ELSE}
-  {%H-}PQuadWord(PtrUInt(HelpBlocksBuff) + (Int64(HelpBlocks) * BlockSize) - SizeOf(QuadWord))^ := EndianSwap(MessageLength);
+  {%H-}PQuadWord({%H-}PtrUInt(HelpBlocksBuff) + (Int64(HelpBlocks) * BlockSize) - SizeOf(QuadWord))^ := EndianSwap(MessageLength);
   {$ENDIF}
   BufferSHA1(Result,HelpBlocksBuff^,HelpBlocks * BlockSize);
 finally
@@ -496,7 +496,7 @@ with PSHA1Context_Internal(Context)^ do
             BufferSHA1(MessageHash,TransferBuffer,BlockSize);
             RemainingSize := Size - (BlockSize - TransferSize);
             TransferSize := 0;
-            SHA1_Update(Context,{%H-}Pointer(PtrUInt(@Buffer) + (Size - RemainingSize))^,RemainingSize);
+            SHA1_Update(Context,{%H-}Pointer({%H-}PtrUInt(@Buffer) + (Size - RemainingSize))^,RemainingSize);
           end
         else
           begin
@@ -517,7 +517,7 @@ with PSHA1Context_Internal(Context)^ do
             {$ELSE}
             TransferSize := Size - (Int64(FullBlocks) * BlockSize);
             {$ENDIF}
-            Move({%H-}Pointer(PtrUInt(@Buffer) + (Size - TransferSize))^,TransferBuffer,TransferSize);
+            Move({%H-}Pointer({%H-}PtrUInt(@Buffer) + (Size - TransferSize))^,TransferBuffer,TransferSize);
           end;
       end;
   end;
