@@ -9,9 +9,9 @@
 
   SHA1 Hash Calculation
 
-  ©František Milt 2016-03-01
+  ©František Milt 2016-07-30
 
-  Version 1.1.3
+  Version 1.1.4
 
 ===============================================================================}
 unit SHA1;
@@ -71,6 +71,7 @@ Function StrToSHA1(Str: String): TSHA1Hash;
 Function TryStrToSHA1(const Str: String; out Hash: TSHA1Hash): Boolean;
 Function StrToSHA1Def(const Str: String; Default: TSHA1Hash): TSHA1Hash;
 Function SameSHA1(A,B: TSHA1Hash): Boolean;
+Function BinaryCorrectSHA1(Hash: TSHA1Hash): TSHA1Hash;
 
 procedure BufferSHA1(var Hash: TSHA1Hash; const Buffer; Size: TMemSize); overload;
 Function LastBufferSHA1(Hash: TSHA1Hash; const Buffer; Size: TMemSize; MessageLength: UInt64): TSHA1Hash; overload;
@@ -100,7 +101,7 @@ Function SHA1_Hash(const Buffer; Size: TMemSize): TSHA1Hash;
 implementation
 
 uses
-  SysUtils, Math
+  SysUtils, Math, BitOps
   {$IF Defined(FPC) and not Defined(Unicode)}
   (*
     If compiler throws error that LazUTF8 unit cannot be found, you have to
@@ -134,60 +135,6 @@ type
 
 //==============================================================================
 
-Function EndianSwap(Value: UInt32): UInt32; register; overload; {$IFNDEF PurePascal}assembler;
-asm
-{$IFDEF x64}
-    MOV   RAX,  RCX
-{$ENDIF}
-    BSWAP EAX
-end;
-{$ELSE}
-begin
-Result := UInt32((Value and $000000FF shl 24) or (Value and $0000FF00 shl 8) or
-                 (Value and $00FF0000 shr 8) or (Value and $FF000000 shr 24));
-end;
-{$ENDIF}
-
-//------------------------------------------------------------------------------
-
-Function EndianSwap(Value: UInt64): UInt64; register; overload; {$IFNDEF PurePascal}assembler;
-asm
-{$IFDEF x64}
-    MOV   RAX,  RCX
-    BSWAP RAX
-{$ELSE}
-    MOV   EAX,  dword ptr [Value + 4]
-    MOV   EDX,  dword ptr [Value]
-    BSWAP EAX
-    BSWAP EDX
-{$ENDIF}
-end;
-{$ELSE}
-begin
-Int64Rec(Result).Hi := EndianSwap(Int64Rec(Value).Lo);
-Int64Rec(Result).Lo := EndianSwap(Int64Rec(Value).Hi);
-end;
-{$ENDIF}
-
-//------------------------------------------------------------------------------
-
-Function LeftRotate(Value: UInt32; Shift: Byte): UInt32; register; {$IFNDEF PurePascal}assembler;
-asm
-{$IFDEF x64}
-    MOV   EAX,  ECX
-{$ENDIF}
-    MOV   CL,   DL
-    ROL   EAX,  CL
-end;
-{$ELSE}
-begin
-Shift := Shift and $1F;
-Result := UInt32((Value shl Shift) or (Value shr (32 - Shift)));
-end;
-{$ENDIF}
-
-//==============================================================================
-
 Function BlockHash(Hash: TSHA1Hash; const Block): TSHA1Hash;
 var
   i:              Integer;
@@ -199,7 +146,7 @@ var
 begin
 Result := Hash;
 For i := 0 to 15 do State[i] := EndianSwap(BlockWords[i]);
-For i := 16 to 79 do State[i] := LeftRotate(State[i - 3] xor State[i - 8] xor State[i - 14] xor State[i - 16],1);
+For i := 16 to 79 do State[i] := ROL(State[i - 3] xor State[i - 8] xor State[i - 14] xor State[i - 16],1);
 For i := 0 to 79 do
   begin
     case i of
@@ -220,11 +167,11 @@ For i := 0 to 79 do
                 RoundConstant := RoundConsts[3];
     end;
     {$IFDEF OverflowCheck}{$Q-}{$ENDIF}
-    Temp := UInt32(LeftRotate(Hash.PartA,5) + FuncResult + Hash.PartE + RoundConstant + State[i]);
+    Temp := UInt32(ROL(Hash.PartA,5) + FuncResult + Hash.PartE + RoundConstant + State[i]);
     {$IFDEF OverflowCheck}{$Q+}{$ENDIF}
     Hash.PartE := Hash.PartD;
     Hash.PartD := Hash.PartC;
-    Hash.PartC := LeftRotate(Hash.PartB,30);
+    Hash.PartC := ROL(Hash.PartB,30);
     Hash.PartB := Hash.PartA;
     Hash.PartA := Temp;
   end;
@@ -289,6 +236,17 @@ begin
 Result := (A.PartA = B.PartA) and (A.PartB = B.PartB) and
           (A.PartC = B.PartC) and (A.PartD = B.PartD) and
           (A.PartE = B.PartE);
+end;
+
+//------------------------------------------------------------------------------
+
+Function BinaryCorrectSHA1(Hash: TSHA1Hash): TSHA1Hash;
+begin
+Result.PartA := EndianSwap(Hash.PartA);
+Result.PartB := EndianSwap(Hash.PartB);
+Result.PartC := EndianSwap(Hash.PartC);
+Result.PartD := EndianSwap(Hash.PartD);
+Result.PartE := EndianSwap(Hash.PartE);
 end;
 
 //==============================================================================
