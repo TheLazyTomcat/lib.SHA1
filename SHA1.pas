@@ -37,6 +37,7 @@ unit SHA1;
 {$IFDEF FPC}
   {$MODE ObjFPC}{$H+}
   {$DEFINE FPC_DisableWarns}
+  {$MACRO ON}
 {$ENDIF}
 
 interface
@@ -102,11 +103,16 @@ uses
   SysUtils, Math, BitOps, StrRect;
 
 {$IFDEF FPC_DisableWarns}
-  {$WARN 4055 OFF} // Conversion between ordinals and pointers is not portable
-  {$WARN 4056 OFF} // Conversion between ordinals and pointers is not portable
+  {$DEFINE FPCDWM}
+  {$DEFINE W4055:={$WARN 4055 OFF}} // Conversion between ordinals and pointers is not portable
+  {$DEFINE W4056:={$WARN 4056 OFF}} // Conversion between ordinals and pointers is not portable
+  {$PUSH}{$WARN 2005 OFF} // Comment level $1 found
   {$IF Defined(FPC) and (FPC_FULLVERSION >= 30000)}
-    {$WARN 5092 OFF} // Variable "$1" of a managed type does not seem to be initialized
+    {$DEFINE W5092:={$WARN 5092 OFF}} // Variable "$1" of a managed type does not seem to be initialized
+  {$ELSE}
+    {$DEFINE W5092:=}
   {$IFEND}
+  {$POP}
 {$ENDIF}
 
 const
@@ -194,6 +200,7 @@ end;
 
 //------------------------------------------------------------------------------
 
+{$IFDEF FPCDWM}{$PUSH}W5092{$ENDIF}
 Function StrToSHA1(Str: String): TSHA1Hash;
 begin
 If Length(Str) < 40 then
@@ -207,6 +214,7 @@ Result.PartC := StrToInt('$' + Copy(Str,17,8));
 Result.PartD := StrToInt('$' + Copy(Str,25,8));
 Result.PartE := StrToInt('$' + Copy(Str,33,8));
 end;
+{$IFDEF FPCDWM}{$POP}{$ENDIF}
 
 //------------------------------------------------------------------------------
 
@@ -286,9 +294,11 @@ LastBlockSize := Size - (UInt64(FullBlocks) * BlockSize);
 HelpBlocks := Ceil((LastBlockSize + SizeOf(UInt64) + 1) / BlockSize);
 HelpBlocksBuff := AllocMem(HelpBlocks * BlockSize);
 try
+{$IFDEF FPCDWM}{$PUSH}W4055 W4056{$ENDIF}
   Move(Pointer(PtrUInt(@Buffer) + (FullBlocks * BlockSize))^,HelpBlocksBuff^,LastBlockSize);
   PUInt8(PtrUInt(HelpBlocksBuff) + LastBlockSize)^ := $80;
   PUInt64(PtrUInt(HelpBlocksBuff) + (UInt64(HelpBlocks) * BlockSize) - SizeOf(UInt64))^ := EndianSwap(MessageLength);
+{$IFDEF FPCDWM}{$POP}{$ENDIF}
   BufferSHA1(Result,HelpBlocksBuff^,HelpBlocks * BlockSize);
 finally
   FreeMem(HelpBlocksBuff,HelpBlocks * BlockSize);
@@ -411,7 +421,9 @@ with PSHA1Context_Internal(Context)^ do
             BufferSHA1(MessageHash,TransferBuffer,BlockSize);
             RemainingSize := Size - (BlockSize - TransferSize);
             TransferSize := 0;
+          {$IFDEF FPCDWM}{$PUSH}W4055 W4056{$ENDIF}
             SHA1_Update(Context,Pointer(PtrUInt(@Buffer) + (Size - RemainingSize))^,RemainingSize);
+          {$IFDEF FPCDWM}{$POP}{$ENDIF}
           end
         else
           begin
@@ -428,7 +440,9 @@ with PSHA1Context_Internal(Context)^ do
         If (FullBlocks * BlockSize) < Size then
           begin
             TransferSize := Size - (UInt64(FullBlocks) * BlockSize);
+          {$IFDEF FPCDWM}{$PUSH}W4055 W4056{$ENDIF}
             Move(Pointer(PtrUInt(@Buffer) + (Size - TransferSize))^,TransferBuffer,TransferSize);
+          {$IFDEF FPCDWM}{$POP}{$ENDIF}
           end;
       end;
   end;
