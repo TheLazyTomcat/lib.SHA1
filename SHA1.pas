@@ -9,9 +9,9 @@
 
   SHA1 Hash Calculation
 
-  ©František Milt 2017-07-18
+  ©František Milt 2018-10-22
 
-  Version 1.1.5
+  Version 1.1.6
 
   Dependencies:
     AuxTypes    - github.com/ncs-sniper/Lib.AuxTypes
@@ -36,8 +36,16 @@ unit SHA1;
 
 {$IFDEF FPC}
   {$MODE ObjFPC}{$H+}
+  {$INLINE ON}
+  {$DEFINE CanInline}
   {$DEFINE FPC_DisableWarns}
   {$MACRO ON}
+{$ELSE}
+  {$IF CompilerVersion >= 17 then}  // Delphi 2005+
+    {$DEFINE CanInline}
+  {$ELSE}
+    {$UNDEF CanInline}
+  {$IFEND}
 {$ENDIF}
 
 interface
@@ -69,7 +77,10 @@ Function SHA1toStr(Hash: TSHA1Hash): String;
 Function StrToSHA1(Str: String): TSHA1Hash;
 Function TryStrToSHA1(const Str: String; out Hash: TSHA1Hash): Boolean;
 Function StrToSHA1Def(const Str: String; Default: TSHA1Hash): TSHA1Hash;
+
+Function CompareSHA1(A,B: TSHA1Hash): Integer;
 Function SameSHA1(A,B: TSHA1Hash): Boolean;
+
 Function BinaryCorrectSHA1(Hash: TSHA1Hash): TSHA1Hash;
 
 procedure BufferSHA1(var Hash: TSHA1Hash; const Buffer; Size: TMemSize); overload;
@@ -78,9 +89,9 @@ Function LastBufferSHA1(Hash: TSHA1Hash; const Buffer; Size: TMemSize): TSHA1Has
 
 Function BufferSHA1(const Buffer; Size: TMemSize): TSHA1Hash; overload;
 
-Function AnsiStringSHA1(const Str: AnsiString): TSHA1Hash;
-Function WideStringSHA1(const Str: WideString): TSHA1Hash;
-Function StringSHA1(const Str: String): TSHA1Hash;
+Function AnsiStringSHA1(const Str: AnsiString): TSHA1Hash;{$IFDEF CanInline} inline; {$ENDIF}
+Function WideStringSHA1(const Str: WideString): TSHA1Hash;{$IFDEF CanInline} inline; {$ENDIF}
+Function StringSHA1(const Str: String): TSHA1Hash;{$IFDEF CanInline} inline; {$ENDIF}
 
 Function StreamSHA1(Stream: TStream; Count: Int64 = -1): TSHA1Hash;
 Function FileSHA1(const FileName: String): TSHA1Hash;
@@ -234,6 +245,28 @@ Function StrToSHA1Def(const Str: String; Default: TSHA1Hash): TSHA1Hash;
 begin
 If not TryStrToSHA1(Str,Result) then
   Result := Default;
+end;
+
+//------------------------------------------------------------------------------
+
+Function CompareSHA1(A,B: TSHA1Hash): Integer;
+var
+  OverlayA:   array[0..4] of UInt32 absolute A;
+  OverlayB:   array[0..4] of UInt32 absolute B;
+  i:          Integer;
+begin
+Result := 0;
+For i := Low(OverlayA) to High(OverlayA) do
+  If OverlayA[i] > OverlayB[i] then
+    begin
+      Result := -1;
+      Break;
+    end
+  else If OverlayA[i] < OverlayB[i] then
+    begin
+      Result := 1;
+      Break;
+    end;
 end;
 
 //------------------------------------------------------------------------------
