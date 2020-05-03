@@ -7,11 +7,11 @@
 -------------------------------------------------------------------------------}
 {===============================================================================
 
-  SHA1 calculation
+  SHA-1 calculation
 
   Version 1.2 (2020-04-28)
 
-  Last change 2020-04-28
+  Last change 2020-05-03
 
   ©2015-2020 František Milt
 
@@ -69,7 +69,7 @@ uses
   Type TSHA1Sys has no such guarantee and its internal structure depends on
   current implementation.
 
-  SHA1 does not differ in little and big endian form, as it is not a single
+  SHA-1 does not differ in little and big endian form, as it is not a single
   quantity, therefore methods like SHA1ToLE or SHA1ToBE do nothing and are
   present only for the sake of completeness.
 }
@@ -401,7 +401,7 @@ end;
 
 class Function TSHA1Hash.HashName: String;
 begin
-Result := 'SHA1';
+Result := 'SHA-1';
 end;
 
 //------------------------------------------------------------------------------
