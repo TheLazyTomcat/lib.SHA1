@@ -11,9 +11,9 @@
 
   Version 1.2.1 (2020-07-13)
 
-  Last change 2020-08-02
+  Last change 2021-04-12
 
-  ©2015-2020 František Milt
+  ©2015-2021 František Milt
 
   Contacts:
     František Milt: frantisek.milt@gmail.com
@@ -222,6 +222,7 @@ end;
     TSHA1Hash - protected methods
 -------------------------------------------------------------------------------}
 
+{$IFDEF OverflowChecks}{$Q-}{$ENDIF}
 procedure TSHA1Hash.ProcessBlock(const Block);
 var
   Hash:           TSHA1Sys;
@@ -258,9 +259,7 @@ For i := 0 to 79 do
      {60..79:}  FuncResult := Hash.PartB xor Hash.PartC xor Hash.PartD;
                 RoundConstant := SHA1_ROUND_CONSTS[3];
     end;
-  {$IFDEF OverflowChecks}{$Q-}{$ENDIF}
     Temp := UInt32(ROL(Hash.PartA,5) + FuncResult + Hash.PartE + RoundConstant + Schedule[i]);
-  {$IFDEF OverflowChecks}{$Q+}{$ENDIF}
     Hash.PartE := Hash.PartD;
     Hash.PartD := Hash.PartC;
     Hash.PartC := ROL(Hash.PartB,30);
@@ -268,14 +267,13 @@ For i := 0 to 79 do
     Hash.PartA := Temp;
   end;
 // final calculation
-{$IFDEF OverflowChecks}{$Q-}{$ENDIF}
 fSHA1.PartA := UInt32(fSHA1.PartA + Hash.PartA);
 fSHA1.PartB := UInt32(fSHA1.PartB + Hash.PartB);
 fSHA1.PartC := UInt32(fSHA1.PartC + Hash.PartC);
 fSHA1.PartD := UInt32(fSHA1.PartD + Hash.PartD);
 fSHA1.PartE := UInt32(fSHA1.PartE + Hash.PartE);
-{$IFDEF OverflowChecks}{$Q+}{$ENDIF}
 end;
+{$IFDEF OverflowChecks}{$Q+}{$ENDIF}
 
 //------------------------------------------------------------------------------
 
