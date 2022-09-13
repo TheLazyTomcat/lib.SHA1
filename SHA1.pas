@@ -11,9 +11,9 @@
 
   Version 1.2.1 (2020-07-13)
 
-  Last change 2021-04-12
+  Last change 2022-09-13
 
-  ©2015-2021 František Milt
+  ©2015-2022 František Milt
 
   Contacts:
     František Milt: frantisek.milt@gmail.com
@@ -109,10 +109,9 @@ type
 ===============================================================================}
 type
   TSHA1Hash = class(TBlockHash)
-  private
-    fSHA1: TSHA1Sys;
-    Function GetSHA1: TSHA1;
   protected
+    fSHA1: TSHA1Sys;
+    Function GetSHA1: TSHA1; virtual;
     procedure ProcessBlock(const Block); override;
     procedure ProcessFirst(const Block); override;
     procedure ProcessLast; override;
@@ -210,7 +209,7 @@ const
     TSHA1Hash - class implementation
 ===============================================================================}
 {-------------------------------------------------------------------------------
-    TSHA1Hash - private methods
+    TSHA1Hash - protected methods
 -------------------------------------------------------------------------------}
 
 Function TSHA1Hash.GetSHA1: TSHA1;
@@ -218,9 +217,7 @@ begin
 Result := SHA1FromSys(fSHA1);
 end;
 
-{-------------------------------------------------------------------------------
-    TSHA1Hash - protected methods
--------------------------------------------------------------------------------}
+//------------------------------------------------------------------------------
 
 {$IFDEF OverflowChecks}{$Q-}{$ENDIF}
 procedure TSHA1Hash.ProcessBlock(const Block);
